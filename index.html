@@ -419,7 +419,7 @@ html:not(.authed) #lgLogout{display:none}
   <!-- INTERP -->
   <section class="view" id="v-interp">
     <h1>Interpretações Oficiais 2024</h1>
-    <div class="toolbar"><label class="fld grow">Pesquisar nas interpretações<input type="text" id="inSearch" placeholder="ex.: falta técnica, 17-15, luta…"></label><span class="count" id="inCount"></span></div>
+    <div class="toolbar"><label class="fld grow">Pesquisar nas interpretações<input type="text" id="inSearch" placeholder="várias palavras: correção erro, reposição bola, luta…"></label><span class="count" id="inCount"></span></div>
     <div id="interpIdx"></div>
   </section>
 
@@ -446,6 +446,18 @@ const $ = s => document.querySelector(s);
 const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const esc = s => (s==null?"":String(s)).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
 const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[\u2012-\u2015]/g,"-");
+/* ---------- pesquisa por palavras (tolerante a acentos/plurais) ---------- */
+const STOP = new Set("de da do das dos o a os as e em no na nos nas um uma que com por para pelo pela ao aos ou se sua seu num numa dum duma".split(" "));
+function qTokens(raw){
+  const q=norm(raw||"").replace(/[^a-z0-9]+/g," ").trim();
+  if(!q) return [];
+  return q.split(/\s+/).filter(t=>t && !STOP.has(t)).map(t=>({t, s:(t.length>3&&t.endsWith("s"))?t.slice(0,-1):null}));
+}
+function hayScore(hay, toks){
+  let sc=0;
+  for(const o of toks){ if(hay.includes(o.t)||(o.s&&hay.includes(o.s))) sc++; }
+  return sc;
+}
 
 /* ---------- storage (sandbox-safe with fallback) ---------- */
 const Store = (()=>{
@@ -566,8 +578,9 @@ function renderStudy(){
     const hit=Q.filter(x=>x.code===code);
     if(hit.length){ renderStudyList(hit,false); return; }
   }
+  const toks=qTokens(raw);
   const list=Q.filter(x=>matchTest(x,t)&&(tm==="__all"||x.tema===tm)&&
-    (!q||norm(x.q).includes(q)||norm(x.e.join(" ")).includes(q)||norm(x.art).includes(q)||norm(x.tema).includes(q)||norm(x.code||"").includes(q)));
+    (!toks.length||hayScore(norm(x.q+" "+x.e.join(" ")+" "+x.art+" "+x.tema+" "+(x.code||"")),toks)===toks.length));
   renderStudyList(list,t===DUBIA_LABEL);
 }
 function renderStudyList(list,showDubiaNote){
@@ -787,42 +800,52 @@ function resetQuiz(){quiz=null;$("#quizPlay").classList.add("hide");$("#quizResu
 
 /* ---------- INDEX (rules) ---------- */
 function renderRules(filter){
-  const q=norm(filter||"");const c=$("#rulesIdx");c.innerHTML="";let shown=0;
+  const toks=qTokens(filter);const need=toks.length;
+  const c=$("#rulesIdx");c.innerHTML="";
+  const sc=(ch,a)=>need?hayScore(norm((a.no?("art "+a.no+" "):"")+a.name+" "+(a.body||[]).join(" ")+" "+ch.head+" "+ch.name),toks):1;
+  let best=0;
+  if(need)RULES.forEach(ch=>ch.arts.forEach(a=>{const s=sc(ch,a);if(s>best)best=s;}));
+  if(need&&best===0){$("#ruCount").textContent="0 artigo(s)";c.innerHTML=`<p class="muted">Sem resultados.</p>`;return;}
+  const thr=need?(best>=need?need:best):1;let shown=0;
   RULES.forEach(ch=>{
-    const arts=ch.arts.filter(a=>{
-      if(!q)return true;
-      const hay=norm((a.no?("art "+a.no+" "):"")+a.name+" "+(a.body||[]).join(" ")+" "+ch.head+" "+ch.name);
-      return hay.includes(q);
-    });
+    const arts=ch.arts.filter(a=>sc(ch,a)>=thr);
     if(!arts.length)return;
     shown+=arts.length;
-    const det=el("details","idxchap");if(q)det.open=true;
+    const det=el("details","idxchap");if(need)det.open=true;
     det.innerHTML=`<summary>${esc(ch.head)} — ${esc(ch.name)} <span class="pill" style="margin-left:auto">${arts.length}</span></summary>`;
     const box=el("div","artbox");
-    arts.forEach(a=>{const ad=el("details","art");if(q)ad.open=true;
+    arts.forEach(a=>{const ad=el("details","art");if(need)ad.open=true;
       const title=a.no?`<span class="n">Art. ${a.no}</span>${esc(a.name)}`:esc(ch.name);
       ad.innerHTML=`<summary>${title}</summary><div class="body">${blocksHTML(a.body)}</div>`;
       box.appendChild(ad);});
     det.appendChild(box);c.appendChild(det);
   });
-  $("#ruCount").textContent=(q?shown+" artigo(s)":RULES.reduce((a,c)=>a+c.arts.filter(x=>x.no).length,0)+" artigos + apêndices");
+  const partial=(need&&best<need)?` · parcial (${best}/${need} termos)`:"";
+  $("#ruCount").textContent=(need?shown+" artigo(s)"+partial:RULES.reduce((a,c)=>a+c.arts.filter(x=>x.no).length,0)+" artigos + apêndices");
   if(!shown)c.innerHTML=`<p class="muted">Sem resultados.</p>`;
 }
 $("#ruSearch").oninput=e=>renderRules(e.target.value);
 
 /* ---------- INDEX (interp) ---------- */
 function renderInterp(filter){
-  const q=norm(filter||"");const c=$("#interpIdx");c.innerHTML="";let shown=0;
+  const toks=qTokens(filter);const need=toks.length;
+  const c=$("#interpIdx");c.innerHTML="";
+  const sc=(a,it)=>need?hayScore(norm(it.ref+" "+it.body.join(" ")+" "+a.label+" "+a.name),toks):1;
+  let best=0;
+  if(need)INTERP.forEach(a=>a.items.forEach(it=>{const s=sc(a,it);if(s>best)best=s;}));
+  if(need&&best===0){$("#inCount").textContent="0 item(s)";c.innerHTML='<p class="muted">Sem resultados.</p>';return;}
+  const thr=need?(best>=need?need:best):1;let shown=0;
   INTERP.forEach(a=>{
-    const items=a.items.filter(it=>!q||norm(it.ref+" "+it.body.join(" ")).includes(q)||norm(a.label+" "+a.name).includes(q));
+    const items=a.items.filter(it=>sc(a,it)>=thr);
     if(!items.length)return;shown+=items.length;
-    const det=el("details","idxchap");if(q)det.open=true;
+    const det=el("details","idxchap");if(need)det.open=true;
     det.innerHTML=`<summary><span class="n" style="color:var(--cp-accent);font-weight:800">${esc(a.label)}</span> ${esc(a.name)} <span class="pill" style="margin-left:auto">${items.length}</span></summary>`;
     const box=el("div","artbox");
     items.forEach(it=>{const b=el("div","body");b.innerHTML=`<span class="itemref">${esc(it.ref)}</span>${blocksHTML(it.body)}`;box.appendChild(b);});
     det.appendChild(box);c.appendChild(det);
   });
-  $("#inCount").textContent=(q?shown+" item(s)":INTERP.reduce((s,a)=>s+a.items.length,0)+" itens · 32 artigos");
+  const partial=(need&&best<need)?` · parcial (${best}/${need} termos)`:"";
+  $("#inCount").textContent=(need?shown+" item(s)"+partial:INTERP.reduce((s,a)=>s+a.items.length,0)+" itens · 32 artigos");
   if(!shown)c.innerHTML=`<p class="muted">Sem resultados.</p>`;
 }
 $("#inSearch").oninput=e=>renderInterp(e.target.value);
