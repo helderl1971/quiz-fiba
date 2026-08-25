@@ -487,10 +487,11 @@ function deviceId(){
   }
   return id;
 }
+function currentUser(){ try{return (localStorage.getItem("fiba_user")||Store.get("fiba_user")||"").trim();}catch(e){return "";} }
 function logAttemptCentral(a){
   if(!SHEETS_URL) return;
   try{
-    const payload={pid:deviceId(),label:a.label,src:a.src,score:a.score,total:a.total,pct:a.pct,
+    const payload={user:currentUser(),pid:deviceId(),label:a.label,src:a.src,score:a.score,total:a.total,pct:a.pct,
       ts:new Date(a.date).toISOString(),ua:navigator.userAgent.slice(0,120)};
     fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},
       body:JSON.stringify(payload)}).catch(()=>{});
