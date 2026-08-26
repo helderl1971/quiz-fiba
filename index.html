@@ -479,6 +479,7 @@ const Store = (()=>{
 
 /* ---------- anonymous device id + central logging ---------- */
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbztVuCwMQxFq3r5CkpwUT-Ef0RPZ6W8g2dNmmlvnPYdIPRt5M5Vl3oAQXiCYz5Kyyul/exec"; /* Google Apps Script Web App */
+const EXCEL_URL = ""; /* Power Automate HTTP trigger -> Excel (OneDrive/SharePoint). Preencher quando o fluxo estiver criado. */
 function deviceId(){
   let id=Store.get("fiba_pid");
   if(!id){
@@ -489,13 +490,12 @@ function deviceId(){
 }
 function currentUser(){ try{return (localStorage.getItem("fiba_user")||Store.get("fiba_user")||"").trim();}catch(e){return "";} }
 function logAttemptCentral(a){
-  if(!SHEETS_URL) return;
-  try{
-    const payload={user:currentUser(),pid:deviceId(),label:a.label,src:a.src,score:a.score,total:a.total,pct:a.pct,
-      ts:new Date(a.date).toISOString(),ua:navigator.userAgent.slice(0,120)};
-    fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},
-      body:JSON.stringify(payload)}).catch(()=>{});
-  }catch(e){}
+  const payload={user:currentUser(),pid:deviceId(),label:a.label,src:a.src,score:a.score,total:a.total,pct:a.pct,
+    ts:new Date(a.date).toISOString(),ua:navigator.userAgent.slice(0,120)};
+  const body=JSON.stringify(payload);
+  [SHEETS_URL,EXCEL_URL].filter(Boolean).forEach(url=>{
+    try{ fetch(url,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:body}).catch(()=>{}); }catch(e){}
+  });
 }
 
 /* ---------- as minhas dúvidas (marcadas pelo utilizador durante o teste) ---------- */
